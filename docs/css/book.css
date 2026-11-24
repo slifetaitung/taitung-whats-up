@@ -47,6 +47,23 @@ html, body{
 #book{ min-width:0 !important; min-height:0 !important; }
 #book img{ width:100%; height:100%; display:block; object-fit:contain; background:#fff; }
 
+/* ── 裝訂線接縫（2026-11-24）─────────────────────────────
+   症狀：手機、平板上雙頁中間有一條明顯的細白線。
+   原因：StPageFlip 把左右兩頁各自用絕對定位擺放，位置與寬度常是小數
+   （例如每頁 187.3px）。高解析度螢幕用 GPU 合成時，兩頁交界那一排像素
+   各只蓋到一部分，背景就從中間透出來。圖片本身是連續的，不是轉檔問題。
+   修法：雙頁靜止時（--simple），讓右頁的圖往左多蓋 1px 壓住交界。
+   object-fit:fill 只往水平拉寬 1px（約 0.5%），垂直完全不動，
+   左右頁的內容上下才對得齊（用 cover 會等比放大，右頁整體高出 1 個像素）。
+   前提：頁框比例要等於圖片比例（book.js 建 PageFlip 時 width/height 給圖片原尺寸）。
+   翻頁動畫進行中 StPageFlip 會拿掉 --simple，回到原本的裁切，不影響動畫。
+   封面、封底（--hard）單獨一頁沒有接縫，不套用。 */
+#book.is-spread .page.--simple.--right:not(.--hard){ overflow:visible; }
+#book.is-spread .page.--simple.--right:not(.--hard) img{
+  margin-left:-1px; width:calc(100% + 1px);
+  object-fit:fill;
+}
+
 /* 每一頁的外框。hard 頁（封面封底）給一點陰影，看起來像書殼 */
 .page{ background:#fff; overflow:hidden; }
 .page[data-density="hard"]{ box-shadow: inset 0 0 0 1px rgba(0,0,0,.15); }

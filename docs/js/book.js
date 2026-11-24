@@ -71,6 +71,7 @@ function fit() {
                           : Math.min(availW,     availH * ratio);
   const pageH = pageW / ratio;
 
+  bookEl.classList.toggle('is-spread', useSpread);   // CSS 用它補裝訂線接縫（見 book.css）
   bookEl.style.width  = Math.floor(pageW * (useSpread ? 2 : 1)) + 'px';
   bookEl.style.height = Math.floor(pageH) + 'px';
   if (pageFlip) pageFlip.update();
@@ -170,8 +171,11 @@ fetch(BASE + 'manifest.json')
     fit();   // 先把容器尺寸算好，PageFlip 初始化時才量得到正確寬高
 
     pageFlip = new St.PageFlip(bookEl, {
-      width: Math.round(MIN_PAGE_W),          // fixed 模式才用得到，這裡只是必填
-      height: Math.round(MIN_PAGE_W / ratio),
+      /* stretch 模式下 width/height 只拿來算頁面長寬比，所以直接給圖片原尺寸。
+         原本給 320×438（比例 0.7306，圖片是 0.7310），頁框和圖片比例差一點，
+         圖片上下會多出極細的留白，裝訂線接縫的修正也會因此上下錯開。 */
+      width: m.pageWidth,
+      height: m.pageHeight,
       size: 'stretch',
       minWidth: MIN_PAGE_W,                   // ← 單頁/跨頁的門檻，見上方註解
       maxWidth: m.pageWidth,
