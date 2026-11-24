@@ -34,6 +34,20 @@ const BASE  = 'pages/' + ISSUE + '/';
    直向不受影響（寬度遠低於門檻），桌機也不受影響（本來就跨頁）。 */
 const MIN_PAGE_W = 320;
 
+/* ── 版面模式：雙頁／單頁（2026-11-24 新增，本書專用）────────────
+   讀者希望手機直向也能看到雙頁展開，所以預設一律雙頁（不看螢幕寬度），
+   工具列的「單頁／雙頁」按鈕可切換，選擇會記在瀏覽器裡。
+   代價：手機直向雙頁時每頁只剩約 180px 寬，字看不清楚，要雙擊放大看
+   （符合規格書「瀏覽 → 雙擊放大細看」的手機原則）。
+
+   做法：StPageFlip 判斷單頁的式子是「寬度 < minWidth×2 且 usePortrait」，
+   它的設定物件是共用的參照，所以執行中直接改這兩個值再 update() 就會切換：
+     雙頁 → usePortrait = false（永遠跨頁）
+     單頁 → usePortrait = true、minWidth 設極大（永遠單頁）               */
+const LAYOUT_KEY = 'flipbook-layout';
+let spread = true;
+try { spread = localStorage.getItem(LAYOUT_KEY) !== 'single'; } catch (e) {}   // iframe 內可能禁用 storage
+
 const isPhone = matchMedia('(max-width: 820px)').matches;
 
 const $ = (id) => document.getElementById(id);
@@ -50,10 +64,8 @@ function fit() {
   const availH = box.height - 16;
   if (availW <= 0 || availH <= 0) return;
 
-  // 先假設跨頁：兩頁並排時的理想寬度
-  const spreadW = Math.min(availW, availH * ratio * 2);
-  // 用和 StPageFlip 一樣的判斷式決定要不要跨頁，兩邊結論才會一致
-  const useSpread = spreadW >= MIN_PAGE_W * 2;
+  // 跨頁與否由讀者選的版面模式決定（見上方 LAYOUT_KEY 說明），不再看寬度門檻
+  const useSpread = spread;
 
   const pageW = useSpread ? Math.min(availW / 2, availH * ratio)
                           : Math.min(availW,     availH * ratio);
@@ -99,6 +111,29 @@ function setZoomScale(big) {
   }
 }
 function closeZoom() { zoomBox.hidden = true; zoomImg.removeAttribute('src'); }
+
+/* 雙頁時，依點擊位置判斷是左頁還是右頁。
+   showCover 的跨頁排法：[0] [1,2] [3,4] … [最後一頁]
+   → 封面單獨在右、封底單獨在左；其他跨頁的左頁一定是奇數。 */
+function pageAt(clientX) {
+  const i = pageFlip.getCurrentPageIndex();
+  if (pageFlip.getOrientation() !== 'landscape' || i === 0) return i;
+  const left  = i % 2 ? i : i - 1;
+  const r = bookEl.getBoundingClientRect();
+  const onRight = clientX > r.left + r.width / 2;
+  return onRight && left + 1 < manifest.pages.length ? left + 1 : left;
+}
+
+/* 把目前的版面模式寫進 StPageFlip 的設定（說明見檔案上方 LAYOUT_KEY），
+   並更新按鈕：按鈕上顯示的是「按下去會變成的模式」。 */
+function layoutSettings() {
+  const s = pageFlip.getSettings();
+  s.usePortrait = !spread;
+  s.minWidth = spread ? MIN_PAGE_W : 1e5;
+  const btn = $('layoutBtn');
+  btn.textContent = spread ? '單頁' : '雙頁';
+  btn.setAttribute('aria-label', spread ? '改成單頁顯示' : '改成雙頁顯示');
+}
 
 zoomImg.addEventListener('click', () => setZoomScale(!zoomBig));
 $('zoomClose').addEventListener('click', closeZoom);
@@ -159,6 +194,7 @@ fetch(BASE + 'manifest.json')
       disableFlipByClick: true,
       useMouseEvents: true,
     });
+    layoutSettings();   // 套用雙頁／單頁模式（要在 loadFromHTML 之前，第一次排版就對）
 
     pageFlip.loadFromHTML(bookEl.querySelectorAll('.page'));
     $('loading').remove();
@@ -174,13 +210,22 @@ fetch(BASE + 'manifest.json')
     pageFlip.on('changeState', sync);
     sync();
 
-    // 雙擊 / 雙指輕點兩下 → 放大目前這一頁
-    bookEl.addEventListener('dblclick', () => openZoom(pageFlip.getCurrentPageIndex()));
+    // 雙擊 / 手指輕點兩下 → 放大「點到的那一頁」（雙頁時分得出左頁、右頁）
+    bookEl.addEventListener('dblclick', (e) => openZoom(pageAt(e.clientX)));
     let lastTap = 0;
-    bookEl.addEventListener('touchend', () => {
+    bookEl.addEventListener('touchend', (e) => {
       const now = Date.now();
-      if (now - lastTap < 320) openZoom(pageFlip.getCurrentPageIndex());
+      if (now - lastTap < 320) openZoom(pageAt(e.changedTouches[0].clientX));
       lastTap = now;
+    });
+
+    // 版面切換按鈕：雙頁 ⇄ 單頁
+    $('layoutBtn').addEventListener('click', () => {
+      spread = !spread;
+      try { localStorage.setItem(LAYOUT_KEY, spread ? 'spread' : 'single'); } catch (e) {}
+      layoutSettings();
+      fit();      // 重算書本尺寸，裡面會呼叫 pageFlip.update() 觸發單頁／跨頁切換
+      sync();
     });
 
     $('prev').addEventListener('click', () => pageFlip.flipPrev());
